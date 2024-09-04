@@ -1,0 +1,86 @@
+```
+#include <SoftwareSerial.h>
+#include <math.h>
+
+#define GY61_X A1
+#define GY61_Y A2
+#define GY61_Z A3
+#define SOUND_SENSOR A0
+#define VIBRATION_SENSOR_TOE A4 // 아날로그 핀으로 변경
+#define VIBRATION_SENSOR_HEEL A5 // 아날로그 핀으로 변경
+
+#define BT_RX 5
+#define BT_TX 6
+
+SoftwareSerial BTSerial(BT_TX, BT_RX);
+
+const int accelThreshold = 300; // GY-61 가속도 센서 임계값 (실제 환경에 맞게 조절)
+const float referenceVoltage = 5.0; // 기준 전압
+const float soundReferenceLevel = 0.01; // 기준 데시벨 수준 (실제 환경에 맞게 조절)
+const float vibrationSensitivity = 0.02; // 진동 센서의 감도 (센서와 환경에 맞게 조절)
+const float vibrationThreshold = 0.1; // 진동 임계값 (미터 단위로 조절)
+const float soundThreshold = 40.0; // 소음 임계값 (데시벨 단위로 조절)
+
+bool isMovementDetected = false;
+unsigned long movementDetectedTime = 0;
+const unsigned long monitoringDuration = 5000; // 5초 동안 소리와 진동을 감지
+
+void setup() {
+  pinMode(SOUND_SENSOR, INPUT);
+  pinMode(VIBRATION_SENSOR_TOE, INPUT);
+  pinMode(VIBRATION_SENSOR_HEEL, INPUT);
+  
+  Serial.begin(9600);
+  BTSerial.begin(9600);
+}
+
+float convertToMeters(int vibrationValue) {
+  // 진동 값을 미터 단위로 변환 (센서의 특성에 맞게 조절)
+  return (vibrationValue / 1023.0) * vibrationSensitivity;
+}
+
+float convertToDecibels(int soundValue) {
+  // 소리 값을 데시벨 단위로 변환
+  float voltage = soundValue * (referenceVoltage / 1024.0); // 센서 출력 전압 계산
+  float dB = 20.0 * log10(voltage / soundReferenceLevel);
+  return dB;
+}
+
+void loop() {
+  int accelX = analogRead(GY61_X);
+  int accelY = analogRead(GY61_Y);
+  int accelZ = analogRead(GY61_Z);
+
+  bool accelDetected = (abs(accelX - 512) > accelThreshold || abs(accelY - 512) > accelThreshold || abs(accelZ - 512) > accelThreshold);
+
+  if (accelDetected) {
+    isMovementDetected = true;
+    movementDetectedTime = millis();
+  }
+
+  if (isMovementDetected) {
+    unsigned long currentTime = millis();
+    if (currentTime - movementDetectedTime <= monitoringDuration) {
+      int soundValue = analogRead(SOUND_SENSOR);
+      int vibrationToe = analogRead(VIBRATION_SENSOR_TOE);
+      int vibrationHeel = analogRead(VIBRATION_SENSOR_HEEL);
+
+      float vibrationMetersToe = convertToMeters(vibrationToe);
+      float vibrationMetersHeel = convertToMeters(vibrationHeel);
+      float soundDecibels = convertToDecibels(soundValue);
+
+      if (vibrationMetersToe > vibrationThreshold || vibrationMetersHeel > vibrationThreshold || soundDecibels > soundThreshold) {
+        String message = "Sound (dB): " + String(soundDecibels, 2) + 
+                         ", Vibration Toe (m): " + String(vibrationMetersToe, 6) + 
+                         ", Vibration Heel (m): " + String(vibrationMetersHeel, 6);
+        BTSerial.println(message);
+        Serial.println(message); // 디버깅을 위해 시리얼 모니터에도 출력
+      }
+    } else {
+      isMovementDetected = false;
+    }
+  }
+
+  delay(100); // 너무 자주 체크하지 않도록 지연
+}
+``` 
